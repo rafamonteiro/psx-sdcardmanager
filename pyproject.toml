@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "psio-sdcardmanager"
+version = "0.1.0"
+description = ""
+authors = ["Rafa Monteiro <rafael@monteiro.io>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pathlib2 ="^2.3.7.post1"
+pycdlib = "^1.14.0"
+PyQt6 = "^6.2.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
