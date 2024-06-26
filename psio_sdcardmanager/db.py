@@ -1,33 +1,34 @@
-'''
+"""
 Sqlite3 database functions
-'''
-
+"""
+import logging
 # System imports
-from sys import argv, exit
+import sys
 from os import remove
 from os.path import exists, join, abspath, dirname
 from pathlib import Path
 from sqlite3 import connect, Error
 
-DATABASE_PATH = join(Path(abspath(dirname(argv[0]))), 'data')
+DATABASE_PATH = join(Path(abspath(dirname(sys.argv[0]))), 'data')
 DATABASE_FILE = 'psio_assist.db'
 DATABASE_FULL_PATH = join(DATABASE_PATH, DATABASE_FILE)
 
-# *****************************************************************************************************************
+logger = logging.getLogger(__name__)
+
+
 # Function that ensures the database file exists and has been merged
 def ensure_database_exists():
     if not exists(DATABASE_FULL_PATH):
         if _database_splits_exist():
             _merge_database()
             if not exists(DATABASE_FULL_PATH):
-                print('Unable to merge database file!')
-                exit()
+                logging.log(logging.ERROR, 'Unable to merge database file!')
+                sys.exit()
         else:
-            print('Database split-files not found!')
-            exit()
-# *****************************************************************************************************************
+            logging.log(logging.ERROR, 'Database split-files not found!')
+            sys.exit()
 
-# *****************************************************************************************************************
+
 def select(select_query):
     rows = []
     try:
@@ -37,27 +38,25 @@ def select(select_query):
         rows = cursor.fetchall()
         cursor.close()
     except Error as error:
-        pass
+        logging.log(logging.ERROR, error)
     finally:
         if conn:
             conn.close()
 
     return rows
-# *****************************************************************************************************************
 
-# *****************************************************************************************************************
+
 def _create_connection(db_file):
     conn = None
     try:
         conn = connect(db_file)
         return conn
     except Error as error:
-        print(error)
+        logging.log(logging.ERROR, error)
 
     return conn
-# *****************************************************************************************************************
 
-# **********************************************************************************************************************
+
 def extract_game_cover_blob(row_id, image_out_path):
     try:
         conn = _create_connection(DATABASE_FULL_PATH)
@@ -70,31 +69,27 @@ def extract_game_cover_blob(row_id, image_out_path):
 
         cursor.close()
     except Error as error:
-        print(error)
-        pass
+        logging.log(logging.ERROR, error)
     finally:
         if conn:
             conn.close()
-# **********************************************************************************************************************
 
-# *****************************************************************************************************************
+
 # Function that checks if each of the database split-files exist
 def _database_splits_exist():
     for i in range(1, 5):  # Adjust the range if you have more split files
         if not exists(join(DATABASE_PATH, f'psio_assist_{i}.db')):
             return False
     return True
-# *****************************************************************************************************************
 
-# *****************************************************************************************************************
+
 # Function that deletes the database split-files
 def _delete_database_splits():
     for i in range(1, 5):  # Adjust the range if you have more split files
         if exists(join(DATABASE_PATH, f'psio_assist_{i}.db')):
             remove(join(DATABASE_PATH, f'psio_assist_{i}.db'))
-# *****************************************************************************************************************
 
-# *****************************************************************************************************************
+
 # Function that merges the split database files
 def _merge_database():
     # List of source databases
@@ -147,4 +142,3 @@ def _merge_database():
     destination_conn.close()
 
     _delete_database_splits()
-# *****************************************************************************************************************

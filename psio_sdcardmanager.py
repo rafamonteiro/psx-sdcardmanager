@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 #
-#  psio_sdcardmanager
-#
-#  This is basically a GUI and wrapper for the binmerge and cue2cu2 scripts
-#  This has a very basic UI for selecting a directory that contains bin/cue files
-#  The script will check if the bin files need to be merged, create the cu2 file and add the game cover
+#  PSX-SDCard Manager!
 #
 #  Copyright (C) 2024 Rafa Monteiro
 #
@@ -23,12 +19,13 @@
 #  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 # System imports
+import logging
 import sys
 from json import load, dumps
 from os.path import join, dirname, abspath
 from sys import argv
 
-from PyQt6.QtGui import QStandardItemModel
+from PyQt6.QtGui import QStandardItemModel, QStandardItem
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton, QProgressBar, QTreeView, QCheckBox, QFrame,
                              QVBoxLayout, QHBoxLayout, QWidget, QFileDialog, QScrollBar, QHeaderView, QLineEdit)
 from pathlib2 import Path
@@ -37,10 +34,9 @@ from pathlib2 import Path
 from psio_sdcardmanager.cue2cu2 import set_cu2_error_log_path
 from psio_sdcardmanager.gamehandler import GameHandler
 
-CURRENT_REVISION = 2.0
+CURRENT_REVISION = 0.1
 PROGRESS_STATUS = 'Status:'
-
-game_list = []
+logger = logging.getLogger(__name__)
 covers_path = None
 
 # Get the directory paths based on the scripts location
@@ -64,6 +60,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
+        self.treeview_game_list = QTreeView()
         self.checkbox_add_art = QCheckBox('Add Cover Art').setEnabled(False)
         self.checkbox_auto_rename = QCheckBox('Auto Rename').setEnabled(False)
         self.checkbox_create_multi_disc = QCheckBox('Create Multi-Disc').setEnabled(False)
@@ -78,7 +75,7 @@ class MainWindow(QMainWindow):
         self.button_src_scan = QPushButton('Scan')
         self.button_start = QPushButton('Start').setEnabled(False)
         self.game_handler = GameHandler()
-
+        self.game_list = []
         self.initUI()
 
     def initUI(self):
@@ -136,16 +133,16 @@ class MainWindow(QMainWindow):
         game_list_layout = QVBoxLayout()
         game_list_frame.setLayout(game_list_layout)
 
-        treeview_game_list = QTreeView()
-        game_list_layout.addWidget(treeview_game_list)
+        self.treeview_game_list = QTreeView()
+        game_list_layout.addWidget(self.treeview_game_list)
 
         # Example headers, replace with your logic
         model = QStandardItemModel()
         headers = ['ID', 'Name', 'Disc Number', 'Bin Files', 'Name Valid', 'CU2', 'BMP']
         model.setHorizontalHeaderLabels(headers)
 
-        treeview_game_list.setModel(model)
-        treeview_game_list.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.treeview_game_list.setModel(model)
+        self.treeview_game_list.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
         scrollbar_game_list = QScrollBar()
         game_list_layout.addWidget(scrollbar_game_list)
@@ -253,35 +250,45 @@ class MainWindow(QMainWindow):
     # Scan button click event
     def _scan_button_clicked(self):
         self.button_src_scan.setEnabled(False)
-        self.game_handler.parse_game_list(src_path.text())
-
+        self.game_list = self.game_handler.parse_game_list(src_path.text())
+        self._display_game_list(self.game_list)
         if self.checkbox_generate_cu2.isChecked() or self.checkbox_merge_bin.isChecked() or self.checkbox_add_art.isChecked() or self.checkbox_limit_name.isChecked() or self.checkbox_auto_rename.isChecked():
             self.button_start.setEnabled(True)
 
-    # *****************************************************************************************************************
+    def _display_game_list(self, game_list):
+        bools = ('No', 'Yes')
+        self.treeview_game_list.model().removeRows(0,
+                                                   self.treeview_game_list.model().rowCount())  # Clear existing rows if any
 
-    # *****************************************************************************************************************
+        for game in game_list:
+            game_id = QStandardItem(str(game.id))
+            game_name = QStandardItem(game.cue_sheet.game_name)
+            disc_number = QStandardItem(str(game.disc_number))
+            number_of_bins = QStandardItem(str(len(game.cue_sheet.bin_files)))
+            name_valid = QStandardItem(str(""))
+            cu2_present = QStandardItem(bools[game.cu2_present])
+            bmp_present = QStandardItem(bools[game.cover_art_present])
+
+            row = [game_id, game_name, disc_number, number_of_bins, name_valid, cu2_present, bmp_present]
+            self.treeview_game_list.model().appendRow(row)
+
     # Start button click event
     def _start_button_clicked(self):
         if not src_path.text() == '':
             self.button_start.setEnabled(False)
             self.game_handler.process_games(self.checkbox_merge_bin.isChecked(), self.checkbox_generate_cu2.isChecked(),
                                             self.checkbox_auto_rename.isChecked(), self.checkbox_limit_name.isChecked(),
-                                            self.checkbox_add_art.isChecked())
+                                            self.checkbox_add_art.isChecked(), self.game_list)
             self.button_start.setEnabled(True)
 
-    # *****************************************************************************************************************
-
-    # *****************************************************************************************************************
     # Checkbox change event
     def checkbox_changed(self):
-        global game_list
         if not self.checkbox_generate_cu2.isChecked() and not self.checkbox_merge_bin.isChecked() and not self.checkbox_add_art.isChecked() and not self.checkbox_limit_name.isChecked() and not self.checkbox_auto_rename.isChecked():
             self.button_start.setEnabled(False)
 
         if src_path.text() is not None and src_path.text() != '':
             if self.checkbox_generate_cu2.isChecked() or self.checkbox_merge_bin.isChecked() or self.checkbox_add_art.isChecked() or self.checkbox_limit_name.isChecked() or self.checkbox_auto_rename.isChecked():
-                #if game_list:
+                # if game_list:
                 self.button_start.setEnabled(True)
 
     # *****************************************************************************************************************
@@ -304,6 +311,8 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    logger.info("PSIO - SDCard Manager Started!")
     app = QApplication(sys.argv)
     window = MainWindow()
     sys.exit(app.exec())

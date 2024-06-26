@@ -1,4 +1,6 @@
 import concurrent
+import logging
+import sqlite3
 from os import listdir, scandir, mkdir, remove, rename
 from os.path import exists, join, basename, splitext
 from shutil import move, rmtree
@@ -13,20 +15,19 @@ from psio_sdcardmanager.db import select, extract_game_cover_blob
 from psio_sdcardmanager.game_files import Cuesheet, Binfile, Game
 from psio_sdcardmanager.serial_finder import get_serial
 
+logger = logging.getLogger(__name__)
+
 
 class GameHandler(QObject):
     def __init__(self):
         super().__init__()
         self.MAX_GAME_NAME_LENGTH = 56
         self.REGION_CODES = ['DTLS_', 'SCES_', 'SLES_', 'SLED_', 'SCED_', 'SCUS_', 'SLUS_', 'SLPS_', 'SCAJ_', 'SLKA_',
-                             'SLPM_',
-                             'SCPS_', 'SCPM_', 'PCPX_', 'PAPX_', 'PTPX_', 'LSP0_', 'LSP1_', 'LSP2_', 'LSP9_', 'SIPS_',
-                             'ESPM_',
-                             'SCZS_', 'SPUS_', 'PBPX_', 'LSP_']
+                             'SLPM_', 'SCPS_', 'SCPM_', 'PCPX_', 'PAPX_', 'PTPX_', 'LSP0_', 'LSP1_', 'LSP2_', 'LSP9_',
+                             'SIPS_', 'ESPM_', 'SCZS_', 'SPUS_', 'PBPX_', 'LSP_']
 
-    def process_games(self, merge_bin_files, force_cu2, auto_rename, validate_game_name, add_cover_art):
+    def process_games(self, merge_bin_files, force_cu2, auto_rename, validate_game_name, add_cover_art, game_list):
         for game in game_list:
-            # _print_game_details(game)
 
             game_id = game.id
             game_name = game.cue_sheet.game_name
@@ -36,39 +37,39 @@ class GameHandler(QObject):
 
             #  #  label_progress.configure(text=f'{PROGRESS_STATUS} Processing - {game_name}')
 
-            print(f'GAME_ID: {game_id}')
-            print(f'GAME_NAME: {game_name}')
-            print(f'GAME_PATH: {game_full_path}')
-            print(f'CUE_PATH: {cue_full_path}')
+            logging.log(logging.INFO, f'GAME_ID: {game_id}')
+            logging.log(logging.INFO, f'GAME_NAME: {game_name}')
+            logging.log(logging.INFO, f'GAME_PATH: {game_full_path}')
+            logging.log(logging.INFO, f'CUE_PATH: {cue_full_path}')
 
             if merge_bin_files and len(game.cue_sheet.bin_files) > 1:
-                print('MERGING BIN FILES...')
+                logging.log(logging.INFO, 'MERGING BIN FILES...')
                 #     #  label_progress.configure(text=f'{PROGRESS_STATUS} Merging bin files - {game_name}')
                 self._merge_bin_files(game, game_name, game_full_path, cue_full_path)
 
             if force_cu2 and not game.cu2_present:
-                print('GENERATING CU2...')
+                logging.log(logging.INFO, 'GENERATING CU2...')
                 #    #  label_progress.configure(text=f'{PROGRESS_STATUS} Generating cu2 file - {game_name}')
                 start_cue2cu2(cue_full_path, f'{game_name}.bin')
 
             if auto_rename:
-                print('RENAMING THE GAME FILES...')
+                logging.log(logging.INFO, 'RENAMING THE GAME FILES...')
                 #    #  label_progress.configure(text=f'{PROGRESS_STATUS} Renaming - {game_name}')
-                redump_game_name = self._game_name_validator(self.get_redump_name(game_id))
+                redump_game_name = self._game_name_validator(game,self.get_redump_name(game_id))
                 self._rename_game(game_full_path, game_name, redump_game_name)
 
             if validate_game_name and not auto_rename:
                 if len(game_name) > self.MAX_GAME_NAME_LENGTH or '.' in game_name:
-                    print('VALIDATING THE GAME NAME...')
+                    logging.log(logging.INFO, 'VALIDATING THE GAME NAME...')
                     #      #  label_progress.configure(text=f'{PROGRESS_STATUS} Validating name - {game_name}')
+                    #TODO need to fix bug with renaming schema
                     new_game_name = self._game_name_validator(game)
-                    print(f'new_game_name: {new_game_name}')
+                    logging.log(logging.INFO, f'new_game_name: {new_game_name}')
                     if new_game_name != game_name:
                         self._rename_game(game_full_path, game_name, new_game_name)
 
             if add_cover_art:
-                print('ADDING THE GAME COVER ART...')
-                #  #  label_progress.configure(text=f'{PROGRESS_STATUS} Adding cover art - {game_name}')
+                logging.log(logging.INFO, 'ADDING THE GAME COVER ART...')
                 self._copy_game_cover(game_full_path, game_id, game_name)
 
     # *****************************************************************************************************************
@@ -82,7 +83,7 @@ class GameHandler(QObject):
             try:
                 mkdir(temp_game_dir)
             except OSError as error:
-                pass
+                logging.log(logging.ERROR, error)
         if exists(temp_game_dir):
             #  #  label_progress.configure(text=f'{PROGRESS_STATUS} Merging bin files')
             start_bin_merge(cue_full_path, game_name, temp_game_dir)
@@ -138,8 +139,8 @@ class GameHandler(QObject):
 
     # *****************************************************************************************************************
     # Function to validate the game name (ensure irt is not too long and does not contain periods)
-    def _game_name_validator(self, game):
-        game_name = game.cue_sheet.game_name
+    def _game_name_validator(self, game, game_name):
+
         if '.' in game_name:
             game_name = game_name.replace('.', '_')
 
@@ -194,17 +195,31 @@ class GameHandler(QObject):
     # *****************************************************************************************************************
     # Function to get the game name (using names from redump and the psx data-centre)
     def get_redump_name(self, game_id, validate_game_name=None):
-        response = select(f'''SELECT name FROM games WHERE game_id = "{game_id.replace('-', '_')}";''')
-        if response is not None and response != []:
+        # Ensure validate_game_name has a get() method
+        if validate_game_name is None or not callable(validate_game_name.get):
+            return ''
+
+        # Replace '-' with '_' in game_id to match the query format
+        game_id = game_id.replace('-', '_')
+
+        # Execute parameterized query to avoid SQL injection
+        try:
+            response = select('SELECT name FROM games WHERE game_id = ?', (game_id,))
+        except sqlite3.Error as e:
+            logging.log(logging.ERROR,f"Database error: {e}")
+
+        if response:
             game_name = response[0][0]
 
-            # Ensure that the game name (including disc number and extension) is not more than 60 chars
             if validate_game_name.get():
-                if int(line[2]) > 0:
+                disc_number = 0  # Default disc number if not found in the line
+                # Ensure disc number is extracted from the appropriate source (example usage)
+                # Example: disc_number = int(line[2])  # Replace with actual source for disc_number
+                if disc_number > 0:
                     if len(game_name) <= 47:
-                        return f'{game_name} (Disc {line[2]})'
+                        return f'{game_name} (Disc {disc_number})'
                     else:
-                        return f'{game_name[:47]} (Disc {line[2]})'
+                        return f'{game_name[:47]} (Disc {disc_number})'
                 else:
                     if len(game_name) <= 47:
                         return game_name
@@ -244,25 +259,30 @@ class GameHandler(QObject):
     # Function to get the unique game id from the bin file
     def _get_disc_collection(self, bin_file_path):
         game_disc_collection = []
-        line = ''
         lines_checked = 0
+
         if exists(bin_file_path):
             with open(bin_file_path, 'rb') as bin_file:
-                while line != None and lines_checked < 300:
-                    try:
-                        line = str(next(bin_file))
-                        if line != None:
-                            lines_checked += 1
-                            for region_code in self.REGION_CODES:
-                                if region_code in line:
-                                    start = line.find(region_code)
-                                    game_id = line[start:start + 11].replace('.', '').strip()
-                                    if game_id not in game_disc_collection:
-                                        game_disc_collection.append(game_id)
-                                    else:
-                                        raise StopIteration
-                    except StopIteration:
+                while lines_checked < 300:
+                    line = bin_file.readline()
+                    if not line:
                         break
+                    try:
+                        line = line.decode('utf-8', errors='ignore').strip()
+                    except UnicodeDecodeError:
+                        continue  # Skip lines that can't be decoded
+
+                    lines_checked += 1
+
+                    for region_code in self.REGION_CODES:
+                        if region_code in line:
+                            start = line.find(region_code)
+                            game_id = line[start:start + 11].replace('.', '').strip()
+                            if game_id not in game_disc_collection:
+                                game_disc_collection.append(game_id)
+                            else:
+                                return game_disc_collection  # Stop searching once a duplicate is found
+
         return game_disc_collection
 
     # *****************************************************************************************************************
@@ -291,7 +311,6 @@ class GameHandler(QObject):
     # *****************************************************************************************************************
     # Function to create the global game list
     def _create_game_list(self, selected_path):
-        global game_list
         game_list = []
 
         # Get all of the sub-dirs from the selected directory
@@ -317,8 +336,7 @@ class GameHandler(QObject):
                         if game_record.lower().endswith('.cue') or game_record.lower().endswith(
                                 '.cu2') and not game_record.startswith('.'):
                             the_game = self._get_cue_sheet_data(game_directory_path, game_path, selected_path,
-                                                                subfolder,
-                                                                game_record)
+                                                                subfolder, game_record)
                             # Add the game to the global game_list
                             game_list += the_game
                         if game_record.lower().endswith('.iso') and not game_record.startswith('.'):
@@ -327,6 +345,7 @@ class GameHandler(QObject):
                             self._print_game_details(the_game)
 
         game_list.sort(key=lambda game_item: game_item.cue_sheet.game_name, reverse=False)
+        return game_list
 
     def rename_cue_cu2_to_bin(self, game):
         base, ext = splitext(game)
@@ -339,8 +358,7 @@ class GameHandler(QObject):
     def _get_cue_sheet_data(self, game_directory_path, game_path, selected_path, subfolder, game_record):
         game_id = None
         temp_game_list = []
-        if game_record.lower().endswith('.cue') or game_record.lower().endswith('.cu2') and not game_record.startswith(
-                '.'):
+        if game_record.lower().endswith('.cue') and not game_record.startswith('.'):
             cue_sheet_path = join(game_directory_path, game_record)
             game_name_from_cue = self._get_game_name_from_cue(cue_sheet_path, False)
 
@@ -389,26 +407,25 @@ class GameHandler(QObject):
     # *****************************************************************************************************************
     # Function to print the game details to the console for debugging purposes
     def _print_game_details(self, game):
-        print(f'game directory: {game.directory_name}')
-        print(f'game path: {game.directory_path}')
-        print(f'game id: {game.id}')
-        print(f'disc number: {game.disc_number}')
+        logging.log(logging.INFO, f'game directory: {game.directory_name}')
+        logging.log(logging.INFO, f'game path: {game.directory_path}')
+        logging.log(logging.INFO, f'game id: {game.id}')
+        logging.log(logging.INFO, f'disc number: {game.disc_number}')
 
         if game.disc_collection:
-            print(f'disc collection: {game.disc_collection}')
+            logging.log(logging.INFO, f'disc collection: {game.disc_collection}')
 
-        print(f'game cover_art_present: {game.cover_art_present}')
-        print(f'game cu2_present: {game.cu2_present}')
-        print(f'cue_sheet file_name: {game.cue_sheet.file_name}')
-        print(f'cue_sheet file_path: {game.cue_sheet.file_path}')
-        print(f'cue_sheet game_name: {game.cue_sheet.game_name}')
+        logging.log(logging.INFO, f'game cover_art_present: {game.cover_art_present}')
+        logging.log(logging.INFO, f'game cu2_present: {game.cu2_present}')
+        logging.log(logging.INFO, f'cue_sheet file_name: {game.cue_sheet.file_name}')
+        logging.log(logging.INFO, f'cue_sheet file_path: {game.cue_sheet.file_path}')
+        logging.log(logging.INFO, f'cue_sheet game_name: {game.cue_sheet.game_name}')
 
         bin_files = game.cue_sheet.bin_files
-        print(f'number of bin files: {len(bin_files)}')
+        logging.log(logging.INFO, f'number of bin files: {len(bin_files)}')
         for bin_file in bin_files:
-            print(f'bin_file file_name: {bin_file.file_name}')
-            print(f'bin_file file_path: {bin_file.file_path}')
-        print()
+            logging.log(logging.INFO, f'bin_file file_name: {bin_file.file_name}')
+            logging.log(logging.INFO, f'bin_file file_path: {bin_file.file_path}')
 
     # *****************************************************************************************************************
     # Function to check if the game is a multi-disc game
@@ -428,18 +445,11 @@ class GameHandler(QObject):
         multi_bin = len(bin_files) > 1
         invalid_name = len(game.cue_sheet.game_name) > self.MAX_GAME_NAME_LENGTH or '.' in game.cue_sheet.game_name
 
-        return {
-            'game': game,
-            'unidentified': unidentified,
-            'no_cover': no_cover,
-            'multi_disc': multi_disc,
-            'is_multi_disc': is_multi_disc,
-            'multi_bin': multi_bin,
-            'invalid_name': invalid_name
-        }
+        return {'game': game, 'unidentified': unidentified, 'no_cover': no_cover, 'multi_disc': multi_disc,
+                'is_multi_disc': is_multi_disc, 'multi_bin': multi_bin, 'invalid_name': invalid_name}
 
     def parse_game_list(self, path):
-        self._create_game_list(path)
+        game_list = self._create_game_list(path)
 
         games_without_cover = []
         multi_bin_games = []
@@ -491,47 +501,29 @@ class GameHandler(QObject):
         # if invalid_named_games:
         #   window.after(0, lambda: validate_game_name.set(True))  # Schedule GUI update on main thread
 
-        print()
-        print('multi-discs:')
+        logging.log(logging.INFO, "\n")
+        logging.log(logging.INFO, 'multi-discs:')
         for game in multi_discs:
-            print(game.id)
+            logging.log(logging.INFO, game.id)
 
-        print()
-        print('multi-disc games:')
+        logging.log(logging.INFO, "\n")
+        logging.log(logging.INFO, 'multi-disc games:')
         for game in multi_disc_games:
-            print(game.id)
+            logging.log(logging.INFO, game.id)
 
-        self._poo()
-
-    # *****************************************************************************************************************
+        return self._poo(game_list)
 
     # *****************************************************************************************************************
-    def _poo(self):
-        print()
-        print('checking for multi-disc games...\n')
+
+    # *****************************************************************************************************************
+    def _poo(self, game_list):
+        logging.log(logging.INFO, "\n")
+        logging.log(logging.INFO, 'checking for multi-disc games...\n')
 
         for game in game_list:
             if int(game.disc_number) == 1:
-                print(f'game id: {game.id}')
-                print(f'game name: {game.cue_sheet.game_name}')
-                print(f'game disc: {game.disc_number}')
-                print(f'game collection: {game.disc_collection}')
-
-    # *****************************************************************************************************************
-
-    # *****************************************************************************************************************
-    def _display_game_list(self):
-        bools = ('No', 'Yes')
-        for count, game in enumerate(game_list):
-            game_id = game.id
-            game_name = game.cue_sheet.game_name
-            disc_number = game.disc_number
-            number_of_bins = len(game.cue_sheet.bin_files)
-            name_valid = bools[
-                len(game.cue_sheet.game_name) <= self.MAX_GAME_NAME_LENGTH and '.' not in game.cue_sheet.game_name]
-            cu2_present = bools[game.cu2_present]
-            bmp_present = bools[game.cover_art_present]
-        # treeview_game_list.insert(parent='', index=count, iid=count, text='', values=(
-        #     game_id, game_name, disc_number, number_of_bins, name_valid, cu2_present, bmp_present))
-
-    # *****************************************************************************************************************
+                logging.log(logging.INFO, f'game id: {game.id}')
+                logging.log(logging.INFO, f'game name: {game.cue_sheet.game_name}')
+                logging.log(logging.INFO, f'game disc: {game.disc_number}')
+                logging.log(logging.INFO, f'game collection: {game.disc_collection}')
+        return game_list

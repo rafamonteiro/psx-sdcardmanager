@@ -10,6 +10,7 @@ python = "^3.12"
 pathlib2 ="^2.3.7.post1"
 pycdlib = "^1.14.0"
 PyQt6 = "^6.2.3"
+pylint = "^3.2.3"
 
 
 [build-system]

@@ -1,8 +1,8 @@
+import logging
+
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-import logging
-import pandas as pd
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ def main():
     df_extract = pd.concat(all_dfs, ignore_index=True)
     df_extract.columns = ["Info", "Disk_Code", "Name", "Language"]
 
-#    path_extract = os.environ["DATACENTER_EXTRACT_OUTPUT_PATH"]
+    #    path_extract = os.environ["DATACENTER_EXTRACT_OUTPUT_PATH"]
     df_extract.to_csv(f"extracted_ps1_datacenter.csv")
 
     logger.info("Extract PS1 DataCenter Finished")

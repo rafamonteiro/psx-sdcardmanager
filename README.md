@@ -1,32 +1,36 @@
-# PSIO SDCard Manager
+# PSX SDCard Manager
 
-Welcome to **PSIO SDCard Manager**, an open-source project designed to streamline the process of managing and creating SD cards for the PSIO device. The PSIO is a device that allows you to play PlayStation 1 games from an SD card, providing a modern and efficient way to enjoy classic gaming.
-
-## Project Overview
-
-**PSIO SDCard Manager** is built upon the functionality of several existing tools, combining their strengths into a single, cohesive application. Our goal is to deliver a fast, robust, and user-friendly application tailored specifically for the PSIO device.
+Welcome to the PSX SDCard Manager project! This application is designed to streamline the process of managing your PlayStation 1 game backups on an SD card, making it easier than ever to enjoy classic gaming.
 
 ### Key Features
 
-- **SD Card Management**: Easily format and manage your SD cards to ensure compatibility with the PSIO device.
-- **Game File Preparation**: Convert and organize your PlayStation game files (BIN, CUE, etc.) for optimal performance on PSIO.
-- **Batch Processing**: Quickly handle multiple games at once, saving time and effort.
+- **Integrated Functionality**: Built upon the strengths of several existing tools, PSX SDCard Manager combines their capabilities into a single, cohesive application.
+- **User-Friendly Interface**: Our primary goal is to deliver a fast, robust, and user-friendly experience, ensuring seamless management of your game backups.
+- **Enhanced Compatibility**: Managing backups for PSIO can be tricky. PSX SDCard Manager simplifies this process, ensuring your backups are compatible and ready to play.
+
+### Why PSX SDCard Manager?
+
+Managing game backups and ensuring compatibility with PSX can be a complex task. This project tries to addresses these challenges by offering a streamlined, intuitive interface and robust functionality. With PSIO SDCard Manager, you can focus on enjoying your gaming experience rather than dealing with technical hurdles.
+
+---
+
+Feel free to explore the code, contribute, and provide feedback to help us improve the application. Happy gaming!
 
 ## Getting Started
 
 ### Prerequisites
 
-- A compatible PSIO device.
+- A compatible PSIO or Xstation device.
 - SD card(s) for storing your game files.
-- Game files in supported formats (BIN, CUE, etc.).
+- Game files in supported formats (BIN/CUE, ISO or IMG).
 
 ### Installation
 
 Clone the repository and follow the setup instructions provided in the documentation.
 
 ```sh
-git clone https://github.com/yourusername/psio-sdcard-manager.git
-cd psio-sdcard-manager
+git clone https://github.com/yourusername/psx-sdcard-manager.git
+cd psx-sdcard-manager
 # Follow further setup instructions in the README.md
 ```
 
@@ -35,7 +39,7 @@ cd psio-sdcard-manager
 1. Launch the application.
 2. Follow the intuitive interface to format your SD card.
 3. Add your game files and let the application handle the necessary conversions and preparations.
-4. Safely eject your SD card and enjoy your games on the PSIO device.
+4. Safely eject your SD card and enjoy your games on the PSIO or Xstation device.
 
 ## Contribution
 
